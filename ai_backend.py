@@ -16,7 +16,7 @@ PASSWORD = "HIVEMQ_PASSWORD"
 TOPIC = "iotsystem/capteurs/temperature"
 
 # --- MONGODB CONFIGURATION ---
-MONGO_URI = "mongodb+srv://pinspindoh1_db_user:5nc6RaicX0rIPlRQ@cluster0.217rxdf.mongodb.net/?appName=Cluster0"
+MONGO_URI = "YOUR_MONGO_URI"
 DB_NAME = "iot_db"
 COLLECTION_NAME = "measures"
 COLLECTION_ANOMALIES = "anomalies"
