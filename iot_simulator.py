@@ -5,11 +5,11 @@ import random
 from datetime import datetime
 
 # --- CONFIGURATION MQTT ---
-# Remplace par tes identifiants HiveMQ
-BROKER = "5b5ee3d0ea76408790ffb14d7edd54e0.s1.eu.hivemq.cloud"  # Ton Host
+# A remplacer par tes identifiants HiveMQ
+BROKER = "HIVEMQ_BROKER_URL"  # Ton Host
 PORT = 8883                                # Port TLS standard
-USERNAME = "hivemq.pins2026"                  # Ton utilisateur
-PASSWORD = "._js@vi8ADUSZDP"                  # Ton mot de passe
+USERNAME = "HIVEMQ_USERNAME"                  # Ton utilisateur
+PASSWORD = "HIVEMQ_PASSWORD"                  # Ton mot de passe
 
 TOPIC = "iotsystem/capteurs/temperature"   # Le sujet défini dans l'étape 1 [cite: 27]
 

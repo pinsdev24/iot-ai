@@ -14,20 +14,12 @@ st.set_page_config(
 
 st.title("🏭 Tableau de Bord de Supervision IoT")
 
-# Suppression des placeholders globaux inutiles car on utilise maintenant des Tabs
-# Les placeholders sont recréés à l'intérieur des tabs à chaque run du script (qui n'est pas réexécuté en boucle, c'est le while True qui boucle)
-# En Streamlit, 'while True' bloque le rechargement complet du script, donc il faut définir les placeholders AVANT la boucle.
-# Je les ai déplacés dans le bloc 'with tab1' ci-dessous.
-
 # --- CONFIGURATION MONGODB ---
-# TODO: Remplace par ton lien de connexion MongoDB Atlas (DOIT ÊTRE LE MÊME QUE DANS ai_backend.py)
-MONGO_URI = "mongodb+srv://pinspindoh1_db_user:5nc6RaicX0rIPlRQ@cluster0.217rxdf.mongodb.net/?appName=Cluster0"
+MONGO_URI = st.secrets["MONGO_URI"]
 DB_NAME = "iot_db"
 COLLECTION_NAME = "measures"
 COLLECTION_ANOMALIES = "anomalies"
 
-# Connexion globale (pour éviter de reconnecter à chaque rechargement si possible, mais Streamlit reload tout le script)
-# On utilise st.cache_resource pour garder la connexion active
 @st.cache_resource
 def get_mongo_client():
     return MongoClient(MONGO_URI, tlsCAFile=certifi.where())

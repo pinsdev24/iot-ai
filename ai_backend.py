@@ -9,10 +9,10 @@ from pymongo import MongoClient
 import certifi
 
 # --- CONFIGURATION ---
-BROKER = "5b5ee3d0ea76408790ffb14d7edd54e0.s1.eu.hivemq.cloud"
+BROKER = "HIVEMQ_BROKER_URL"
 PORT = 8883
-USERNAME = "hivemq.pins2026"
-PASSWORD = "._js@vi8ADUSZDP"
+USERNAME = "HIVEMQ_USERNAME"
+PASSWORD = "HIVEMQ_PASSWORD"
 TOPIC = "iotsystem/capteurs/temperature"
 
 # --- MONGODB CONFIGURATION ---
@@ -74,15 +74,9 @@ def analyser_donnees():
                 print(f"❌ Erreur sauvegarde anomalies : {e}")
 
     # 3. Sauvegarde MongoDB (On remplace les données pour cet exercice simple)
-    # Dans un vrai cas, on ferait des insert_many seulement sur les nouvelles données
     if collection is not None:
         try:
-            # On vide la collection (optionnel, pour simuler le "remplacement" du CSV)
-            # collection.delete_many({}) 
-            # ⚠️ Si on veut garder l'historique, on n'efface pas.
-            # MAIS ici data_buffer grandit déjà, donc si on insert tout data_buffer à chaque fois sans vider, 
-            # on aura des doublons exponentiels.
-            # STRATÉGIE SIMPLE : On vide tout et on remet tout le buffer (comme un fichier CSV)
+            # On vide tout et on remet tout le buffer (comme un fichier CSV)
             collection.delete_many({})
             
             # On convertit le DataFrame en dictionnaire pour MongoDB
@@ -112,7 +106,6 @@ def analyser_donnees():
 def on_connect(client, userdata, flags, rc):
     if rc == 0:
         print("✅ Backend IA Connecté !")
-        # C'est la ligne qui manquait : on s'abonne au sujet
         client.subscribe(TOPIC) 
         print(f"📡 Abonné au topic : {TOPIC}")
     else:
