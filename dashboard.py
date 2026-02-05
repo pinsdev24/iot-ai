@@ -2,6 +2,8 @@ import streamlit as st
 import pandas as pd
 import time
 import os
+from pymongo import MongoClient
+import certifi
 
 # Configuration de la page
 st.set_page_config(
@@ -12,75 +14,131 @@ st.set_page_config(
 
 st.title("🏭 Tableau de Bord de Supervision IoT")
 
-# Emplacements pour les éléments dynamiques
-kpi1_col, kpi2_col, kpi3_col = st.columns(3)
-kpi1 = kpi1_col.empty()
-kpi2 = kpi2_col.empty()
-kpi3 = kpi3_col.empty()
-alert_placeholder = st.empty()
-chart_placeholder = st.empty()
-table_placeholder = st.empty()
+# Suppression des placeholders globaux inutiles car on utilise maintenant des Tabs
+# Les placeholders sont recréés à l'intérieur des tabs à chaque run du script (qui n'est pas réexécuté en boucle, c'est le while True qui boucle)
+# En Streamlit, 'while True' bloque le rechargement complet du script, donc il faut définir les placeholders AVANT la boucle.
+# Je les ai déplacés dans le bloc 'with tab1' ci-dessous.
 
-DATA_FILE = "historique_iot.csv"
+# --- CONFIGURATION MONGODB ---
+# TODO: Remplace par ton lien de connexion MongoDB Atlas (DOIT ÊTRE LE MÊME QUE DANS ai_backend.py)
+MONGO_URI = "mongodb+srv://pinspindoh1_db_user:5nc6RaicX0rIPlRQ@cluster0.217rxdf.mongodb.net/?appName=Cluster0"
+DB_NAME = "iot_db"
+COLLECTION_NAME = "measures"
+COLLECTION_ANOMALIES = "anomalies"
 
-def load_data():
-    if not os.path.exists(DATA_FILE):
+# Connexion globale (pour éviter de reconnecter à chaque rechargement si possible, mais Streamlit reload tout le script)
+# On utilise st.cache_resource pour garder la connexion active
+@st.cache_resource
+def get_mongo_client():
+    return MongoClient(MONGO_URI, tlsCAFile=certifi.where())
+
+def load_data(limit=100):
+    try:
+        client = get_mongo_client()
+        db = client[DB_NAME]
+        collection = db[COLLECTION_NAME]
+        
+        # Optimisation : On ne récupère que les N derniers documents
+        cursor = collection.find().sort("timestamp", -1).limit(limit)
+        data = list(cursor)
+        
+        if not data:
+            return pd.DataFrame()
+            
+        df = pd.DataFrame(data)
+        if '_id' in df.columns: del df['_id']
+        df['timestamp'] = pd.to_datetime(df['timestamp'])
+        return df.sort_values(by="timestamp")
+    except Exception as e:
         return pd.DataFrame()
-    # On charge le CSV
-    df = pd.read_csv(DATA_FILE)
-    # On s'assure que le timestamp est bien compris comme une date
-    df['timestamp'] = pd.to_datetime(df['timestamp'])
-    return df
 
-# Boucle d'auto-actualisation (Simule le temps réel)
+def load_anomalies(limit=10):
+    try:
+        client = get_mongo_client()
+        db = client[DB_NAME]
+        collection = db[COLLECTION_ANOMALIES]
+        data = list(collection.find().sort("timestamp", -1).limit(limit))
+        if not data: return pd.DataFrame()
+        df = pd.DataFrame(data)
+        if '_id' in df.columns: del df['_id']
+        df['timestamp'] = pd.to_datetime(df['timestamp'])
+        return df
+    except:
+        return pd.DataFrame()
+
+# Sidebar pour les filtres
+st.sidebar.header("⚙️ Configuration")
+sensor_filter = st.sidebar.selectbox("Sélectionner un Capteur", ["Tous", "C001", "C002", "C003"])
+refresh_rate = st.sidebar.slider("Taux de rafraîchissement (s)", 1, 10, 2)
+
+# Onglets pour organiser l'affichage
+tab1, tab2 = st.tabs(["📈 Monitoring Temps Réel", "🚨 Historique Anomalies"])
+
+with tab1:
+    # On crée les placeholders une seule fois ici
+    top_row = st.container()
+    kpi1_col, kpi2_col, kpi3_col = top_row.columns(3)
+    kpi1 = kpi1_col.empty()
+    kpi2 = kpi2_col.empty()
+    kpi3 = kpi3_col.empty()
+    
+    alert_placeholder = st.empty()
+    chart_placeholder = st.empty()
+    
+    st.subheader("Dernières Mesures")
+    table_placeholder = st.empty()
+
+with tab2:
+    st.subheader("Journal des Anomalies Détectées")
+    anomalies_placeholder = st.empty()
+
+# Boucle principale
 while True:
-    df = load_data()
+    # 1. Chargement des données (Optimisé: Fetch last 200)
+    df = load_data(limit=200)
     
     if not df.empty:
-        # On prend la dernière mesure reçue
-        last_row = df.iloc[-1]
-        
-        # --- 1. AFFICHAGE DES KPIs (Indicateurs) ---
-        kpi1.metric(
-            label="🌡️ Température",
-            value=f"{last_row['temperature']} °C",
-            delta=f"{last_row['temperature'] - 25:.1f} °C vs ref"
-        )
-        
-        kpi2.metric(
-            label="💧 Humidité",
-            value=f"{last_row['humidity']} %"
-        )
-        
-        # --- 2. GESTION DES ALERTES [Critère examen] ---
-        # Si le score d'anomalie est -1 (calculé par ton IA)
-        if 'anomaly_score' in last_row and last_row['anomaly_score'] == -1:
-            alert_placeholder.error(f"🚨 ALERTE CRITIQUE : Anomalie détectée sur le capteur {last_row['sensor_id']} !")
-            status = "ANOMALIE"
+        # Filtre Capteur
+        if sensor_filter != "Tous":
+            df_display = df[df['sensor_id'] == sensor_filter]
         else:
-            alert_placeholder.success("✅ Système stable. Aucune anomalie détectée.")
-            status = "NORMAL"
+            df_display = df
+
+        if not df_display.empty:
+            last_row = df_display.iloc[-1]
             
-        kpi3.metric(label="Statut Système", value=status)
+            # KPIs
+            kpi1.metric("🌡️ Température", f"{last_row['temperature']} °C", f"{last_row['temperature'] - 25:.1f} °C vs ref")
+            kpi2.metric("💧 Humidité", f"{last_row['humidity']} %")
+            
+            # Statut
+            is_anomaly = last_row.get('anomaly_score', 1) == -1
+            status = "⚠️ ANOMALIE" if is_anomaly else "🟢 NORMAL"
+            kpi3.metric("Statut Système", status)
 
-        # --- 3. GRAPHIQUES [Critère examen] ---
-        # On affiche les 50 derniers points pour que le graphique reste lisible
-        chart_data = df.tail(50).set_index("timestamp")
-        chart_placeholder.line_chart(chart_data[['temperature', 'humidity']])
+            # Alerte Banner
+            if is_anomaly:
+                alert_placeholder.error(f"🚨 ANOMALIE DÉTECTÉE sur {last_row['sensor_id']} à {last_row['timestamp'].strftime('%H:%M:%S')}")
+            else:
+                alert_placeholder.info("Système nominal")
 
-        # --- 4. TABLEAU DE DONNÉES [Critère examen] ---
-        # On affiche les 10 dernières lignes, triées par date (plus récent en haut)
-        latest_data = df.tail(10)[['timestamp', 'sensor_id', 'temperature', 'humidity', 'anomaly_score']]
-        # On ajoute une colonne lisible pour l'humain
-        latest_data['Statut'] = latest_data['anomaly_score'].apply(lambda x: '🔴 ANOMALIE' if x == -1 else '🟢 OK')
-        
-        table_placeholder.dataframe(latest_data.style.map(
-            lambda v: 'color: red; font-weight: bold;' if v == '🔴 ANOMALIE' else '', 
-            subset=['Statut']
-        ), width='stretch')
-
+            # Graphique (Derniers 50 points du filtre)
+            chart_data = df_display.tail(50).set_index("timestamp")
+            chart_placeholder.line_chart(chart_data[['temperature', 'humidity']])
+            
+            # Tableau Monitoring
+            latest = df_display.tail(5)[['timestamp', 'sensor_id', 'temperature', 'humidity', 'anomaly_score']]
+            latest['Statut'] = latest['anomaly_score'].apply(lambda x: '🔴' if x == -1 else '🟢')
+            table_placeholder.dataframe(latest, width='stretch')
+    
+    # 2. Chargement Anomalies (Tab 2)
+    df_anomalies = load_anomalies(limit=20)
+    if not df_anomalies.empty:
+        anomalies_placeholder.dataframe(
+            df_anomalies[['timestamp', 'sensor_id', 'temperature', 'humidity']].style.format({"temperature": "{:.1f}", "humidity": "{:.1f}%"}),
+            width='stretch'
+        )
     else:
-        alert_placeholder.warning("⏳ En attente de données du Backend IA...")
+        anomalies_placeholder.info("Aucune anomalie récente.")
 
-    # Pause de 2 secondes avant de recharger le fichier (Actualisation auto)
-    time.sleep(2)
+    time.sleep(refresh_rate)

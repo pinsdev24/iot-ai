@@ -5,6 +5,8 @@ from sklearn.ensemble import IsolationForest
 import matplotlib.pyplot as plt
 from datetime import datetime
 import os
+from pymongo import MongoClient
+import certifi
 
 # --- CONFIGURATION ---
 BROKER = "5b5ee3d0ea76408790ffb14d7edd54e0.s1.eu.hivemq.cloud"
@@ -13,8 +15,25 @@ USERNAME = "hivemq.pins2026"
 PASSWORD = "._js@vi8ADUSZDP"
 TOPIC = "iotsystem/capteurs/temperature"
 
-DATA_FILE = "historique_iot.csv"
+# --- MONGODB CONFIGURATION ---
+MONGO_URI = "mongodb+srv://pinspindoh1_db_user:5nc6RaicX0rIPlRQ@cluster0.217rxdf.mongodb.net/?appName=Cluster0"
+DB_NAME = "iot_db"
+COLLECTION_NAME = "measures"
+COLLECTION_ANOMALIES = "anomalies"
+
 IMG_FILE = "anomalies_detectees.png"
+
+# Connexion MongoDB
+try:
+    mongo_client = MongoClient(MONGO_URI, tlsCAFile=certifi.where())
+    db = mongo_client[DB_NAME]
+    collection = db[COLLECTION_NAME]
+    anomalies_collection = db[COLLECTION_ANOMALIES]
+    print("✅ Connecté à MongoDB Atlas !")
+except Exception as e:
+    print(f"❌ Erreur connexion MongoDB : {e}")
+    collection = None
+    anomalies_collection = None
 
 # Buffer pour stocker les données en mémoire vive avant analyse
 data_buffer = []
@@ -43,24 +62,51 @@ def analyser_donnees():
         print(f"⚠️ ANOMALIES DÉTECTÉES : {len(anomalies)}")
         print(anomalies[['timestamp', 'temperature']])
 
-    # 3. Sauvegarde CSV (Mode 'w' pour écraser et garder l'exemple propre, ou 'a' pour ajouter)
-    df.to_csv(DATA_FILE, index=False)
-    print(f"💾 Données sauvegardées dans {DATA_FILE}")
+        # Sauvegarde des anomalies dans la collection dédiée
+        if anomalies_collection is not None:
+            try:
+                # On convertit en liste de dictionnaires
+                anomalies_records = anomalies.to_dict(orient='records')
+                # On insère dans la collection anomalies
+                anomalies_collection.insert_many(anomalies_records)
+                print(f"🚨 {len(anomalies_records)} anomalies archivées dans la collection '{COLLECTION_ANOMALIES}'")
+            except Exception as e:
+                print(f"❌ Erreur sauvegarde anomalies : {e}")
 
+    # 3. Sauvegarde MongoDB (On remplace les données pour cet exercice simple)
+    # Dans un vrai cas, on ferait des insert_many seulement sur les nouvelles données
+    if collection is not None:
+        try:
+            # On vide la collection (optionnel, pour simuler le "remplacement" du CSV)
+            # collection.delete_many({}) 
+            # ⚠️ Si on veut garder l'historique, on n'efface pas.
+            # MAIS ici data_buffer grandit déjà, donc si on insert tout data_buffer à chaque fois sans vider, 
+            # on aura des doublons exponentiels.
+            # STRATÉGIE SIMPLE : On vide tout et on remet tout le buffer (comme un fichier CSV)
+            collection.delete_many({})
+            
+            # On convertit le DataFrame en dictionnaire pour MongoDB
+            records = df.to_dict(orient='records')
+            collection.insert_many(records)
+            print(f"💾 {len(records)} mesures sauvegardées dans MongoDB")
+        except Exception as e:
+            print(f"❌ Erreur écriture MongoDB : {e}")
+
+    # Retirer les commentaires pour générer le graphique
     # 4. Génération du Graphique (Livrable)
-    plt.figure(figsize=(10, 6))
-    plt.plot(df.index, df['temperature'], label='Température', color='blue')
+    # plt.figure(figsize=(10, 6))
+    # plt.plot(df.index, df['temperature'], label='Température', color='blue')
     
-    # On dessine les points rouges là où il y a des anomalies
-    if not anomalies.empty:
-        plt.scatter(anomalies.index, anomalies['temperature'], color='red', label='Anomalie', zorder=5)
+    # # On dessine les points rouges là où il y a des anomalies
+    # if not anomalies.empty:
+    #     plt.scatter(anomalies.index, anomalies['temperature'], color='red', label='Anomalie', zorder=5)
 
-    plt.title("Détection d'anomalies (Isolation Forest)")
-    plt.xlabel("Index des mesures")
-    plt.ylabel("Température (°C)")
-    plt.legend()
-    plt.savefig(IMG_FILE)
-    plt.close() # Ferme la figure pour libérer la mémoire
+    # plt.title("Détection d'anomalies (Isolation Forest)")
+    # plt.xlabel("Index des mesures")
+    # plt.ylabel("Température (°C)")
+    # plt.legend()
+    # plt.savefig(IMG_FILE)
+    # plt.close() # Ferme la figure pour libérer la mémoire
 
 # --- GESTION MQTT ---
 def on_connect(client, userdata, flags, rc):

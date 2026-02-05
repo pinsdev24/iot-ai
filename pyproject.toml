@@ -9,4 +9,6 @@ dependencies = [
     "paho-mqtt>=2.1.0",
     "pandas>=3.0.0",
     "scikit-learn>=1.8.0",
+    "pymongo>=4.6.0",
+    "certifi>=2024.2.2",
 ]
